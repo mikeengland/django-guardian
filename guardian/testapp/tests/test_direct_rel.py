@@ -4,13 +4,14 @@ from django.contrib.auth.models import Group, Permission
 from django.test import TestCase
 
 from guardian.compat import get_user_model
+from guardian.models import UserObjectPermission, GroupObjectPermission
 from guardian.shortcuts import assign_perm
 from guardian.shortcuts import get_groups_with_perms
 from guardian.shortcuts import get_objects_for_group
 from guardian.shortcuts import get_objects_for_user
 from guardian.shortcuts import get_users_with_perms
 from guardian.shortcuts import remove_perm
-from guardian.testapp.models import Mixed, ReverseMixed
+from guardian.testapp.models import Mixed, ReverseMixed, MixedGroupObjectPermission
 from guardian.testapp.models import Project
 from guardian.testapp.models import ProjectGroupObjectPermission
 from guardian.testapp.models import ProjectUserObjectPermission
@@ -77,6 +78,26 @@ class TestDirectUserPermissions(TestCase):
                              jane: ['change_project'],
                          })
 
+    def test_get_users_with_perms_with_twenty_users_executes_six_queries(self):
+        for i in range(20):
+            user = User.objects.create_user('jane' + str(i), 'jane@foobar.com', 'jane')
+            assign_perm('add_project', user, self.project)
+            assign_perm('change_project', user, self.project)
+            assign_perm('change_project', user, self.project)
+
+        with self.assertNumQueries(6):
+            get_users_with_perms(self.project, attach_perms=True)
+
+    def test_get_users_with_perms_with_thirty_users_executes_six_queries(self):
+        for i in range(30):
+            user = User.objects.create_user('jane' + str(i), 'jane@foobar.com', 'jane')
+            assign_perm('add_project', user, self.project)
+            assign_perm('change_project', user, self.project)
+            assign_perm('change_project', user, self.project)
+
+        with self.assertNumQueries(6):
+            get_users_with_perms(self.project, attach_perms=True)
+
     def test_get_users_with_perms_plus_groups(self):
         User.objects.create_user('john', 'john@foobar.com', 'john')
         jane = User.objects.create_user('jane', 'jane@foobar.com', 'jane')
@@ -90,6 +111,30 @@ class TestDirectUserPermissions(TestCase):
                              self.joe: ['add_project', 'change_project'],
                              jane: ['change_project'],
                          })
+
+    def test_get_users_with_perms_plus_groups_runs_twelve_queries_when_twenty_groups_and_twenty_users_have_perms(self):
+        User.objects.create_user('john', 'john@foobar.com', 'john')
+        for i in range(20):
+            user = User.objects.create_user('jane' + str(i), 'jane@foobar.com', 'jane')
+            assign_perm('add_project', user, self.project)
+
+            group = Group.objects.create(name='devs' + str(i))
+            assign_perm('change_project', group, self.project)
+
+        with self.assertNumQueries(12):
+            get_users_with_perms(self.project, attach_perms=True)
+
+    def test_get_users_with_perms_plus_groups_runs_twelve_queries_when_thirty_groups_and_forty_users_have_perms(self):
+        User.objects.create_user('john', 'john@foobar.com', 'john')
+        for i in range(30):
+            user = User.objects.create_user('jane' + str(i), 'jane@foobar.com', 'jane')
+            assign_perm('add_project', user, self.project)
+
+            group = Group.objects.create(name='devs' + str(i))
+            assign_perm('change_project', group, self.project)
+
+        with self.assertNumQueries(12):
+            get_users_with_perms(self.project, attach_perms=True)
 
     def test_get_objects_for_user(self):
         foo = Project.objects.create(name='foo')

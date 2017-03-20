@@ -411,7 +411,7 @@ class GetUsersWithPermsTest(TestCase):
         result = get_users_with_perms(self.obj1, attach_perms=True,
             with_superusers=False, with_group_users=False)
         expected = {self.user1: ["change_contenttype"],
-                    admin: ["delete_contenttype"]}
+                    admin: ["add_contenttype", "change_contenttype", "delete_contenttype"]}
         self.assertEqual(result, expected)
 
     def test_without_group_users_no_result(self):

@@ -278,17 +278,100 @@ def get_users_with_perms(obj, attach_perms=False, with_superusers=False,
             qset = qset | Q(is_superuser=True)
         return get_user_model().objects.filter(qset).distinct()
     else:
-        # TODO: Do not hit db for each user!
-        users = {}
-        for user in get_users_with_perms(obj,
-                                         with_group_users=with_group_users,
-                                         with_superusers=with_superusers):
-            # TODO: Support the case of set with_group_users but not with_superusers.
-            if with_group_users or with_superusers:
-                users[user] = sorted(get_perms(user, obj))
-            else:
-                users[user] = sorted(get_user_perms(user, obj))
-        return users
+        user_model = get_user_model()
+        perms_qs = Permission.objects.filter(content_type=ctype)
+        perms = perms_qs.values_list('codename', flat=True)
+        users_with_perms = _get_user_perms(obj, perms)
+
+        if with_group_users:
+            # merge the two dicts ensuring that each user has the correct permissions attached
+            group_users_with_perms = _get_user_in_group_perms(obj, perms)
+            for user, perms in group_users_with_perms.items():
+                if user not in users_with_perms:
+                    users_with_perms[user] = perms
+                else:
+                    users_with_perms[user] = sorted(set(users_with_perms[user]) | set(perms))
+
+        if with_superusers:
+            # attach all system superusers with all valid perms for this object
+            superusers = user_model.objects.filter(is_superuser=True)
+            for user in superusers:
+                if user not in users_with_perms:
+                    # users_with_perms already assigns the correct permissions to superusers
+                    # so don't waste time doing that again here
+                    users_with_perms[user] = sorted(perms)
+
+        return users_with_perms
+
+
+def _get_user_perms(obj, valid_perms):
+    """
+    Returns users along with their associated permissions on the object
+    :return: Dictionary of users -> permissions
+    """
+    user_model = get_user_model()
+    users = {}
+
+    # get all users with permissions to this object (excluding users in groups)
+    users_with_perms = get_users_with_perms(obj, with_group_users=False)
+
+    # then get all permissions for these users
+    user_ids = users_with_perms.values_list(user_model._meta.pk.name, flat=True)
+    user_qs = get_user_obj_perms_model(obj).objects.filter(user_id__in=user_ids).prefetch_related('user', 'permission')
+
+    if get_user_obj_perms_model(obj).objects.is_generic():
+        user_qs = user_qs.filter(object_pk=obj.pk)
+    else:
+        user_qs = user_qs.filter(content_object_id=obj.pk)
+
+    # add the user keys for users who have access. Superusers have all perms.
+    for user in users_with_perms:
+        users[user] = sorted(valid_perms) if user.is_superuser else []
+
+    # sort through all the permissions for users
+    for perm in user_qs:
+        user = next((x for x in users_with_perms if getattr(x, user_model._meta.pk.name) == perm.user_id), None)
+        if user and not user.is_superuser:
+            users[user].append(perm.permission.codename)
+
+    return users
+
+
+def _get_user_in_group_perms(obj, valid_perms):
+    """
+    Returns group users with their associated permissions for all groups that
+    have permissions on the provided object
+    :return: Dictionary of users -> permissions
+    """
+    users = {}
+    # get all groups with permissions to this object
+    groups_with_perms = get_groups_with_perms(obj).prefetch_related('user_set')
+
+    # get all group permissions on the provided object
+    group_perms_qs = get_group_obj_perms_model(obj).objects.filter(
+        group_id__in=groups_with_perms.values_list('id', flat=True)
+    ).prefetch_related('group__user_set')
+
+    if get_group_obj_perms_model(obj).objects.is_generic():
+        group_qs = group_perms_qs.filter(object_pk=obj.pk)
+    else:
+        group_qs = group_perms_qs.filter(content_object_id=obj.pk)
+
+    # add each group user to a dictionary. If the user is a superuser, add all the valid perms.
+    for group in groups_with_perms:
+        group_users = group.user_set.all()
+        for user in group_users:
+            users[user] = sorted(valid_perms) if user.is_superuser else []
+
+    # add each user to the users dictionary along with their associated permissions
+    for perm in group_perms_qs:
+        group = next((x for x in group_qs if x.group_id == perm.group_id), None)
+        if group:
+            for user in group.group.user_set.all():
+                if not user.is_superuser:
+                    users[user].append(perm.permission.codename)
+
+    return users
 
 
 def get_groups_with_perms(obj, attach_perms=False):

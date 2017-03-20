@@ -1,6 +1,7 @@
 Release 1.4.7 (tba)
 ============================
 
+* Reduced number of queries executed in the get_groups_with_perms and get_users_with_perms functions
 * Improved performance of `clean_orphan_obj_perms` management command
 * Use bumpversion for versioning.
 * Enable Python 3.6 testing

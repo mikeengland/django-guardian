@@ -51,7 +51,6 @@ SECRET_KEY = ''.join([random.choice(string.ascii_letters) for x in range(40)])
 
 DATABASES = {'default': env.db(default="sqlite:///")}
 
-
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -75,3 +74,19 @@ TEMPLATES = [
 
 if django.VERSION < (1, 8):
     TEMPLATE_DIRS = TEMPLATES[0]['DIRS']
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django.db': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+        },
+    },
+}
